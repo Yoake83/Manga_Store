@@ -14,12 +14,12 @@ type Kind='card'|'lantern'|'cover';
 type Audio={hover:()=>void;choose:()=>void}|null;
 const tint=true;
 
-/** One selectable object: reveal animation, hover lift/brighten, idle motion and pointer events. */
+/** Spacious card layout with staggered unfurl, gentle drift and damped cursor tilt. */
 function Hoverable({rig,st,i,pos,rot=[0,0,0],kind,audio,onClick,children}:{
   rig:RigRef;st:number;i:number;pos:[number,number,number];rot?:[number,number,number];kind:Kind;audio:Audio;onClick:()=>void;children:ReactNode}){
   const g=useRef<THREE.Group>(null!),h=useRef(0),hov=useRef(false),mats=useRef<any[]>([]),mount=useRef(performance.now());
   useEffect(()=>{mats.current=[];g.current.traverse((o:any)=>{const m=o.material;if(m&&m.userData?.tint&&!mats.current.includes(m))mats.current.push(m)})},[]);
-  const pointer=useRef({x:0,y:0}),foil=useRef<THREE.ShaderMaterial>(null!),floor=useRef<THREE.MeshBasicMaterial>(null!);
+  const pointer=useRef({x:0,y:0}),smooth=useRef({x:0,y:0}),foil=useRef<THREE.ShaderMaterial>(null!),floor=useRef<THREE.MeshBasicMaterial>(null!);
   const reduce=useMemo(()=>prefersReduced(),[]),glow=useMemo(()=>glowTex(),[]);
   useEffect(()=>()=>{glow.dispose();document.body.style.cursor=''},[glow]);
   const uniforms=useMemo(()=>({time:{value:0},hover:{value:0}}),[]);
@@ -27,13 +27,26 @@ function Hoverable({rig,st,i,pos,rot=[0,0,0],kind,audio,onClick,children}:{
   const ok=()=>!rig.current.busy&&!rig.current.paused&&rig.current.stage===st;
   useFrame((state,dt)=>{
     const r=rig.current,now=performance.now(),t=state.clock.elapsedTime,o=g.current;
-    if(r.stage!==st)hov.current=false;
-    h.current+=((hov.current?1:0)-h.current)*(1-Math.exp(-10*dt));
+    if(r.stage!==st||r.busy||r.paused)hov.current=false;
+    const damping=1-Math.exp(-9*Math.min(dt,.1));
+    h.current+=((hov.current?1:0)-h.current)*damping;
+    smooth.current.x+=(pointer.current.x-smooth.current.x)*damping;
+    smooth.current.y+=(pointer.current.y-smooth.current.y)*damping;
     if(foil.current){foil.current.uniforms.time.value=t;foil.current.uniforms.hover.value=h.current}
     if(floor.current)floor.current.opacity=(r.stage===st?.11+h.current*.16:0);
     const born=(st===3?mount.current:r.born[st])+i*(st===3?60:110),k=Math.max(0,Math.min(1,(now-born)/800)),be=1-Math.pow(1-k,3);
-    o.scale.setScalar(Math.max(.001,be)*(1+h.current*.14));
-    if(kind==='card'){o.position.y=pos[1]+Math.sin(t*.9+i)*.2;o.lookAt(state.camera.position.x,o.position.y,state.camera.position.z);if(!reduce){o.rotation.x=-pointer.current.y*h.current*.09;o.rotation.y+=pointer.current.x*h.current*.12}}
+    o.scale.setScalar(Math.max(.001,be)*(1+h.current*(kind==='card'?.055:.1)));
+    if(kind==='card'){
+      // Equal depth prevents perspective from pushing the outer cards into their neighbours.
+      const reveal=reduce?1:be,drift=reduce?0:Math.sin(t*.8+i*1.4)*.085;
+      o.scale.setScalar(Math.max(.001,reveal)*(1+h.current*.055));
+      o.position.set(pos[0],pos[1]+drift+h.current*.16-(1-reveal)*.65,pos[2]+h.current*.42);
+      const tiltX=reduce?0:-smooth.current.y*h.current*.09;
+      const tiltY=reduce?0:smooth.current.x*h.current*.10;
+      o.rotation.x=THREE.MathUtils.lerp(o.rotation.x,tiltX,damping);
+      o.rotation.y=THREE.MathUtils.lerp(o.rotation.y,rot[1]+tiltY+(reduce?0:(1-reveal)*.24*(i%2?1:-1)),damping);
+      o.rotation.z=THREE.MathUtils.lerp(o.rotation.z,reduce?0:Math.sin(t*.55+i)*.012,damping);
+    }
     else if(kind==='lantern'){o.position.y=pos[1]+Math.sin(t*1.1+i*1.7)*.25;o.rotation.y=Math.sin(t*.4+i)*.15;o.rotation.z=Math.sin(t*.8+i)*.04}
     else{o.position.z=pos[2]+h.current*.9;o.position.y=pos[1]+Math.sin(t*.7+i)*.12;o.rotation.x=reduce?0:-pointer.current.y*h.current*.07;o.rotation.y=rot[1]+(reduce?0:pointer.current.x*h.current*.09)}
     const b=.85+h.current*.55;mats.current.forEach(m=>m.color.setScalar(b));
@@ -64,8 +77,8 @@ export function TypeCards({rig,audio,onPick}:Common){
   useEffect(()=>{let alive=true;let textures:THREE.Texture[]=[];const image=new Image();image.onload=()=>{if(!alive)return;textures=TYPES.map((d,i)=>paintedCard(image,i,d.n,d.d,d.k));setPainted(textures)};image.src='/art/type-atlas.png';return()=>{alive=false;image.onload=null;textures.forEach(t=>t.dispose())}},[]);
   const tex=useMemo(()=>TYPES.map(d=>card(d.k,d.n,d.d,d.h)),[]);
   useEffect(()=>()=>tex.forEach(t=>t.dispose()),[tex]);
-  return(<>{TYPES.map((d,i)=>{const a=(i-2.5)*.38;return(
-    <Hoverable key={d.n} rig={rig} st={1} i={i} kind="card" audio={audio} onClick={()=>onPick(1,i)} pos={aspect<1?[(i%3-1)*2.9,i<3?6.2:2.1,-10]:[Math.sin(a)*8.5,2.8,-6-Math.cos(a)*2.2+2.2]}>
+  return(<>{TYPES.map((d,i)=>{const grid=aspect<1.55;return(
+    <Hoverable key={d.n} rig={rig} st={1} i={i} kind="card" audio={audio} onClick={()=>onPick(1,i)} pos={grid?[(i%3-1)*3.1,i<3?6.2:2.1,-7]:[(i-2.5)*3.1,2.8,-7]} rot={[0,grid?0:(i-2.5)*-.025,0]}>
       <mesh><planeGeometry args={[2.4,3.6]}/><meshBasicMaterial map={painted[i]??tex[i]} side={THREE.DoubleSide} userData={{tint}}/></mesh>
     </Hoverable>)})}</>);
 }
