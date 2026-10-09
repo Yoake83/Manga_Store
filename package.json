@@ -1,0 +1,25 @@
+{
+ "name": "yoake",
+ "version": "0.3.0",
+ "private": true,
+ "scripts": {
+  "dev": "next dev",
+  "build": "next build",
+  "start": "next start"
+ },
+ "dependencies": {
+  "next": "14.2.35",
+  "react": "18.3.1",
+  "react-dom": "18.3.1",
+  "three": "0.152.2",
+  "@react-three/fiber": "8.15.19",
+  "@react-three/postprocessing": "2.15.11",
+  "postprocessing": "6.34.1"
+ },
+ "devDependencies": {
+  "typescript": "5.6.3",
+  "@types/react": "18.3.11",
+  "@types/node": "20.16.11",
+  "@types/three": "0.152.1"
+ }
+}
